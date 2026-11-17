@@ -2480,7 +2480,7 @@ describe('staff-forward intake', () => {
     expect(createTicketMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).orgId)).toEqual(['o-msp', 'o-msp', 'o-client']);
   });
 
-  it('never applies to Mailgun or Microsoft 365 mail, even with a forward marker in a plain body', async () => {
+  it('never applies to Mailgun, nor to Microsoft 365 mail through the Gmail text scan field', async () => {
     state.selectRows['organizations'] = [{ id: 'o-msp' }];
     resolveOrgMock.mockImplementation(async (addr: string) =>
       addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: false } : { orgId: 'o-msp', autoCreateContact: false });
@@ -2493,6 +2493,82 @@ describe('staff-forward intake', () => {
 
     expect(createTicketMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).orgId)).toEqual(['o-msp', 'o-msp']);
     expect(resolveOrgMock).not.toHaveBeenCalledWith('jane@client.example', expect.anything());
+  });
+
+  describe('Microsoft 365 mailbox (Outlook forwards)', () => {
+    const m365 = (o: Partial<NormalizedInboundEmail> = {}) => email({ provider: 'm365', resolvedPartnerId: 'p-1', ...o });
+    const outlookHtml = [
+      '<div>Peux-tu regarder ?</div><hr style="display:inline-block;width:98%" tabindex="-1">',
+      '<div id="divRplyFwdMsg" dir="ltr"><font face="Calibri">',
+      '<b>De&nbsp;:</b> Jane Client &lt;jane@client.example&gt;<br>',
+      '<b>Envoyé&nbsp;:</b> lundi 17 novembre 2026 09:12<br>',
+      '<b>À&nbsp;:</b> Tech &lt;tech@msp.example&gt;<br>',
+      '<b>Objet&nbsp;:</b> Imprimante</font></div>',
+      '<div>Our printer stopped working.</div>',
+    ].join('');
+
+    it('routes a staff Outlook forward by the ORIGINAL sender domain', async () => {
+      state.selectRows['organizations'] = [{ id: 'o-client' }];
+      resolveOrgMock.mockImplementation(async (addr: string) =>
+        addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: true } : { orgId: 'o-msp', autoCreateContact: true });
+
+      await ingest(m365({ from: 'tech@msp.example', text: 'x', html: outlookHtml, forwardScanHtml: outlookHtml }));
+
+      expect(createTicketMock).toHaveBeenCalledTimes(1);
+      const input = createTicketMock.mock.calls[0]![0] as Record<string, unknown>;
+      expect(input.orgId).toBe('o-client');
+      expect(resolveRequesterMock).not.toHaveBeenCalled();
+      expect(maybeSendAutoresponseMock).not.toHaveBeenCalled();
+      expect(String(inboundOf()[0]!.error ?? inboundOf()[0]!.note ?? JSON.stringify(inboundOf()[0]))).toContain('staff-forward');
+    });
+
+    it('does not scan the HTML when forwardScanHtml is absent (older producer)', async () => {
+      state.selectRows['organizations'] = [{ id: 'o-msp' }];
+      resolveOrgMock.mockImplementation(async (addr: string) =>
+        addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: false } : { orgId: 'o-msp', autoCreateContact: false });
+
+      await ingest(m365({ from: 'tech@msp.example', text: 'x', html: outlookHtml }));
+
+      expect((createTicketMock.mock.calls[0]![0] as Record<string, unknown>).orgId).toBe('o-msp');
+      expect(resolveOrgMock).not.toHaveBeenCalledWith('jane@client.example', expect.anything());
+    });
+
+    it('is disabled when the partner has not turned staffForwardRouting on', async () => {
+      loadPolicyMock.mockResolvedValue({ enabled: true, unknownSenderMode: 'quarantine', defaultTriageOrgId: null, dropUnverifiedSenders: false, staffForwardRouting: false });
+      state.selectRows['organizations'] = [{ id: 'o-msp' }];
+      resolveOrgMock.mockImplementation(async (addr: string) =>
+        addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: false } : { orgId: 'o-msp', autoCreateContact: false });
+
+      await ingest(m365({ from: 'tech@msp.example', text: 'x', html: outlookHtml, forwardScanHtml: outlookHtml }));
+
+      expect((createTicketMock.mock.calls[0]![0] as Record<string, unknown>).orgId).toBe('o-msp');
+    });
+
+    it('gives no forward routing to a sender who is not partner-level staff', async () => {
+      state.selectRows['users'] = [];
+      state.selectRows['organizations'] = [{ id: 'o-other' }];
+      resolveOrgMock.mockImplementation(async (addr: string) =>
+        addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: false } : { orgId: 'o-other', autoCreateContact: false });
+
+      await ingest(m365({ from: 'someone@other.example', text: 'x', html: outlookHtml, forwardScanHtml: outlookHtml }));
+
+      expect((createTicketMock.mock.calls[0]![0] as Record<string, unknown>).orgId).toBe('o-other');
+    });
+
+    it('never applies the HTML scan to Gmail or Mailgun mail', async () => {
+      state.selectRows['organizations'] = [{ id: 'o-msp' }];
+      resolveOrgMock.mockImplementation(async (addr: string) =>
+        addr.endsWith('@client.example') ? { orgId: 'o-client', autoCreateContact: false } : { orgId: 'o-msp', autoCreateContact: false });
+
+      await ingest(gmail({ from: 'tech@msp.example', text: 'x', html: outlookHtml, forwardScanHtml: outlookHtml }));
+      await ingest(email({
+        provider: 'mailgun', from: 'tech@msp.example', text: 'x', html: outlookHtml, forwardScanHtml: outlookHtml,
+        providerMessageId: 'pm-mg', messageId: '<pm-mg@msp.example>',
+      }));
+
+      expect(createTicketMock.mock.calls.map((c) => (c[0] as Record<string, unknown>).orgId)).toEqual(['o-msp', 'o-msp']);
+      expect(resolveOrgMock).not.toHaveBeenCalledWith('jane@client.example', expect.anything());
+    });
   });
 });
 

@@ -14,9 +14,10 @@
  *
  * Parses a provider-supplied text/plain body only, and the caller runs it only
  * for mail from a connected Gmail mailbox; HTML-only mail routes normally. The
- * native Mailgun address and Microsoft 365 mailboxes never reach it, and modern
- * Outlook marks a forward with an underscore rule rather than "-----Original
- * Message-----", which is not recognized. A
+ * native Mailgun address never reaches it. Microsoft 365 mailboxes use
+ * outlookForwardParse.ts instead, which reads Outlook's HTML forward block
+ * (modern Outlook marks a forward with an underscore rule rather than
+ * "-----Original Message-----", which this text parser does not recognize). A
  * forward is recognized ONLY by an exact forward-marker line (Gmail
  * "---------- Forwarded message ---------" or Outlook "-----Original
  * Message-----") whose very next line starts a header block containing a From:
@@ -76,7 +77,7 @@ function stripQuotesAndComments(line: string): string {
 }
 
 /** Pull the first email address out of a "From:" header line. */
-function addrFromLine(line: string): string | null {
+export function addrFromLine(line: string): string | null {
   const cleaned = stripQuotesAndComments(line);
   const angle = cleaned.match(ANGLE_ADDR)?.[1];
   if (angle) return angle.toLowerCase();

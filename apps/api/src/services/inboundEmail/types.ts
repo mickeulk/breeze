@@ -90,6 +90,13 @@ export interface NormalizedInboundEmail {
    *  when the producer predates this field; detection then does not run (fail
    *  closed). Staff-forward routing also requires provider 'gmail'. */
   forwardScanText?: string;
+  /** The message's provider-supplied HTML body, for staff-forward detection on
+   *  Microsoft 365 mailboxes only (Outlook marks a forward structurally in the
+   *  HTML; see outlookForwardParse.ts). Set only by the Graph normalizer, and
+   *  only for an HTML body with a From mailbox. Absent otherwise, or when the
+   *  producer predates this field; detection then does not run (fail closed).
+   *  Staff-forward routing reads it only for provider 'm365'. */
+  forwardScanHtml?: string;
   html?: string;         // retained raw, not rendered in v1
   messageId?: string;
   inReplyTo?: string;

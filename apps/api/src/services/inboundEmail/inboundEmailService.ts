@@ -15,6 +15,7 @@ import { changeTicketStatus, createTicket, type TicketActor } from '../ticketSer
 import { resolvePartnerByRecipient } from './resolvePartner';
 import { resolveOrgBySenderDomain, resolveEmailRequester, loadPartnerInboundPolicy } from './resolveOrg';
 import { extractForwardedSender, domainOf } from './forwardParse';
+import { extractOutlookForwardedSender } from './outlookForwardParse';
 import { addressDomain } from './authenticationResults';
 import { normalizeMailgunForm } from './mailgun';
 import { UNASSIGNED_POOL_ORG_TYPE } from '../unassignedPool/orgType';
@@ -543,9 +544,10 @@ export async function processInboundEmail(
     // Gates, all required:
     //  - the partner turned it on (settings.ticketing.inbound.staffForwardRouting,
     //    default off);
-    //  - the message came from a connected Gmail mailbox (provider 'gmail'). The
-    //    native Mailgun address and Microsoft 365 mailboxes never route this way:
-    //    neither gives a body known to be the sender's own text/plain part;
+    //  - the message came from a connected mailbox: Gmail (provider 'gmail',
+    //    its text/plain part, forwardParse.ts) or Microsoft 365 (provider
+    //    'm365', the Graph HTML body, outlookForwardParse.ts). The native
+    //    Mailgun address never routes this way;
     //  - the outer message already passed the sender-auth gate above, so an
     //    external sender cannot reach this branch with a forged forwarded block;
     //  - the outer sender is partner-level staff of THIS partner (see
@@ -557,10 +559,12 @@ export async function processInboundEmail(
     // autoresponse, no contact onboarded). Falls through to ordinary routing when
     // there is no forward block, the original domain is unmapped, or it is the
     // forwarder's own domain (then the message is handled exactly as it would be
-    // with this setting off). Only a provider-supplied, unstripped text/plain
-    // body is scanned (forwardScanText): mail without one routes normally.
-    const forwardedFrom = policy.staffForwardRouting && n.provider === 'gmail'
-      ? extractForwardedSender(n.forwardScanText)
+    // with this setting off). Only a provider-supplied, unstripped body is
+    // scanned (forwardScanText for Gmail, forwardScanHtml for Microsoft 365):
+    // mail without one routes normally.
+    const forwardedFrom = !policy.staffForwardRouting ? null
+      : n.provider === 'gmail' ? extractForwardedSender(n.forwardScanText)
+      : n.provider === 'm365' ? extractOutlookForwardedSender(n.forwardScanHtml)
       : null;
     const fwdDomain = domainOf(forwardedFrom);
     if (forwardedFrom && fwdDomain && fwdDomain !== senderDomain(n.from)) {

@@ -341,6 +341,8 @@ export function normalizeGraphMessage(
     subject: msg.subject ?? '',
     text,
     html,
+    // Staff-forward detection (Outlook forwards are marked in the HTML only).
+    forwardScanHtml: html && fromAddr ? html : undefined,
     messageId: msg.internetMessageId,
     inReplyTo: header(msg.internetMessageHeaders, 'In-Reply-To'),
     references,
