@@ -588,7 +588,9 @@ export class GravityZoneClient {
     const out: GzQuarantineItem[] = [];
     for (let page = 1; page <= GZ_MAX_PAGES; page++) {
       const r = await this.call<{ pagesCount?: number; hasMoreRecords?: boolean; items?: GzQuarantineItem[] }>(
-        'quarantine/computers', '1.1', 'getQuarantineItemsList',
+        // The quarantine API exists only at v1.0 (Bitdefender's getQuarantineItemsList reference);
+        // /v1.1/jsonrpc/quarantine/computers answers JSON-RPC -32601 "method not found".
+        'quarantine/computers', '1.0', 'getQuarantineItemsList',
         {
           page,
           perPage: GZ_QUARANTINE_PAGE_SIZE,

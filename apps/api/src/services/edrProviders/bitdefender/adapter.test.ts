@@ -393,6 +393,17 @@ describe('listDetections', () => {
     expect(JSON.parse(page.cursor!)).toEqual({ v: 1, incidentsChangedAfter: NOW.toISOString() });
   });
 
+  it('quarantine method not found (JSON-RPC -32601) -> warning, quarantine cursor not advanced, incidents still delivered', async () => {
+    const { ctx } = makeCtx({
+      ...routes(),
+      'quarantine/computers.getQuarantineItemsList': { body: JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'Method not found' } }) },
+    });
+    const page = await adapter.listDetections(ctx, tenant(C1), null, NOW);
+    expect(page.warnings).toEqual(['quarantine: method not available on this GravityZone console']);
+    expect(page.detections.some((d) => d.vendorKind === 'incident')).toBe(true);
+    expect(JSON.parse(page.cursor!)).toEqual({ v: 1, incidentsChangedAfter: NOW.toISOString() });
+  });
+
   it('unknown incident status / severityScore -> unknown bucket, never throws', async () => {
     const { ctx } = makeCtx(routes());
     const page = await adapter.listDetections(ctx, tenant(C1), null, NOW);

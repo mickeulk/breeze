@@ -202,7 +202,7 @@ export const bitdefenderAdapter: EdrProviderAdapter = {
           ['incidents', () => client.call('incidents', '1.2', 'getIncidentsList', {
             page: 1, perPage: 10, filters: { changeStartDate: day.toISOString(), changeEndDate: new Date().toISOString() },
           }, { operationClass: 'incidents' })],
-          ['quarantine', () => client.call('quarantine/computers', '1.1', 'getQuarantineItemsList', {
+          ['quarantine', () => client.call('quarantine/computers', '1.0', 'getQuarantineItemsList', {
             page: 1, perPage: 1, filters: { startDate: day.toISOString(), endDate: new Date().toISOString() },
           })],
         ];
@@ -476,8 +476,15 @@ export const bitdefenderAdapter: EdrProviderAdapter = {
       }
       next.quarantineAfter = toIso;
     } catch (e) {
-      if (!isDegradation(e)) throw e;
-      warnings.push(e.code === 'licence' ? 'quarantine: licence not available' : 'quarantine: API not enabled on key');
+      // Quarantine is a secondary stream: a console that does not expose the method must not
+      // fail the whole tenant (incidents above are still delivered). The cursor is not advanced,
+      // so the window is retried on the next run.
+      if (isReq(e) && !e.reauth && e.code === 'method_not_found') {
+        warnings.push('quarantine: method not available on this GravityZone console');
+      } else {
+        if (!isDegradation(e)) throw e;
+        warnings.push(e.code === 'licence' ? 'quarantine: licence not available' : 'quarantine: API not enabled on key');
+      }
     }
 
     return { detections, cursor: JSON.stringify(next), warnings };
